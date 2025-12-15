@@ -177,15 +177,29 @@ export default function SelectPixels() {
                             const endX = Math.max(rectangleStartRef.current.x, gx);
                             const endY = Math.max(rectangleStartRef.current.y, gy);
 
-                            const width = (endX - startX + 1) * CELL_SIZE;
-                            const height = (endY - startY + 1) * CELL_SIZE;
-
-                            // Draw preview rectangle
+                            // Draw preview - skip occupied pixels
                             const preview = rectanglePreviewRef.current;
                             preview.clear();
-                            preview.rect(startX * CELL_SIZE, startY * CELL_SIZE, width, height);
+
+                            // Draw each cell individually, skipping occupied ones
+                            for (let x = startX; x <= endX; x++) {
+                                for (let y = startY; y <= endY; y++) {
+                                    // Bounds check
+                                    if (x < 0 || x >= GRID_COLS || y < 0 || y >= GRID_ROWS) continue;
+
+                                    const key = `${x},${y}`;
+
+                                    // Skip if occupied
+                                    if (occupiedSet.current.has(key)) continue;
+
+                                    // Draw this cell
+                                    preview.rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                                }
+                            }
+
+                            // Fill and stroke all at once
                             preview.fill({ color: 0x22c55e, alpha: 0.3 }); // Semi-transparent green
-                            preview.stroke({ width: 2, color: 0x22c55e });
+                            preview.stroke({ width: 1, color: 0x22c55e });
                         }
                     }
                 });
@@ -640,95 +654,6 @@ export default function SelectPixels() {
 
                 {/* --- CANVAS AREA --- */}
                 <div className="flex-1 relative bg-[#0a0a0a]">
-                    {/* Tool Controls (Top Left) */}
-                    <div className="absolute top-6 left-6 z-10 space-y-3">
-                        {/* Selection Mode */}
-                        <div className="bg-black/80 backdrop-blur rounded-lg p-3 border border-white/10 shadow-lg">
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setSelectMode('auto')}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all ${
-                                        selectMode === 'auto'
-                                            ? 'bg-primary text-black'
-                                            : 'bg-white/10 text-white hover:bg-white/20'
-                                    }`}
-                                    title="Auto Select - Click to select preset blocks"
-                                >
-                                    <span className="material-symbols-outlined text-[16px]">grid_on</span>
-                                    <span>Auto</span>
-                                </button>
-                                <button
-                                    onClick={() => setSelectMode('manual')}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all ${
-                                        selectMode === 'manual'
-                                            ? 'bg-primary text-black'
-                                            : 'bg-white/10 text-white hover:bg-white/20'
-                                    }`}
-                                    title="Manual Draw - Draw rectangles to select"
-                                >
-                                    <span className="material-symbols-outlined text-[16px]">brush</span>
-                                    <span>Manual</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Block Size Preset (only for Auto) */}
-                        {selectMode === 'auto' && (
-                            <div className="bg-black/80 backdrop-blur rounded-lg p-3 border border-white/10 shadow-lg">
-                                <select
-                                    value={blockSize}
-                                    onChange={(e) => setBlockSize(Number(e.target.value))}
-                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-md text-white text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                                >
-                                    <option value={100}>10×10 (100px)</option>
-                                    <option value={200}>14×14 (200px)</option>
-                                    <option value={500}>22×22 (500px)</option>
-                                    <option value={1000}>32×32 (1K px)</option>
-                                    <option value={2500}>50×50 (2.5K px)</option>
-                                </select>
-                            </div>
-                        )}
-
-                        {/* Canvas Tools */}
-                        <div className="bg-black/80 backdrop-blur rounded-lg p-3 border border-white/10 shadow-lg">
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => { setCurrentTool('draw'); if(appRef.current) appRef.current.canvas.style.cursor = 'crosshair'; }}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all ${
-                                        currentTool === 'draw'
-                                            ? 'bg-primary text-black'
-                                            : 'bg-white/10 text-white hover:bg-white/20'
-                                    }`}
-                                    title="Select Tool"
-                                >
-                                    <span className="material-symbols-outlined text-[16px]">touch_app</span>
-                                    <span>Select</span>
-                                </button>
-                                <button
-                                    onClick={() => { setCurrentTool('pan'); if(appRef.current) appRef.current.canvas.style.cursor = 'grab'; }}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all ${
-                                        currentTool === 'pan'
-                                            ? 'bg-primary text-black'
-                                            : 'bg-white/10 text-white hover:bg-white/20'
-                                    }`}
-                                    title="Pan Tool"
-                                >
-                                    <span className="material-symbols-outlined text-[16px]">pan_tool</span>
-                                    <span>Pan</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Clear Button */}
-                        <button
-                            onClick={handleClear}
-                            className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-2 border border-red-500/30"
-                        >
-                            <span className="material-symbols-outlined text-[16px]">delete</span>
-                            <span>Clear</span>
-                        </button>
-                    </div>
-
                     {/* Zoom Controls (Bottom Right) */}
                     <div className="absolute bottom-6 right-6 z-10 flex flex-col gap-2">
                         <button
