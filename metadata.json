@@ -1,0 +1,5 @@
+{
+  "name": "PixelBoard",
+  "description": "A collaborative pixel art billboard application where users can buy and customize blocks of pixels.",
+  "requestFramePermissions": []
+}
