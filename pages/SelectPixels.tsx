@@ -30,6 +30,7 @@ export default function SelectPixels() {
     const appRef = useRef<Application | null>(null);
     const gridRef = useRef<Graphics | null>(null);
     const selectionRef = useRef<Graphics | null>(null);
+    const rectanglePreviewRef = useRef<Graphics | null>(null);
 
     // Logic State
     const [selectedPixels, setSelectedPixels] = useState<Set<string>>(new Set());
@@ -44,6 +45,9 @@ export default function SelectPixels() {
     // Ref to track current tool for event handlers (avoid stale closure)
     const toolRef = useRef(currentTool);
     const selectModeRef = useRef(selectMode);
+
+    // Rectangle selection tracking (for manual mode)
+    const rectangleStartRef = useRef<{ x: number, y: number } | null>(null);
 
     // Calculate Occupied Set for O(1) Lookup
     const occupiedSet = useRef<Set<string>>(new Set());
@@ -118,7 +122,12 @@ export default function SelectPixels() {
                 selectionRef.current = selGraphics;
                 mainStage.addChild(selGraphics);
 
-                // 4. Interaction Events on Stage
+                // 4. Rectangle Preview Layer (for manual mode)
+                const rectPreviewGraphics = new Graphics();
+                rectanglePreviewRef.current = rectPreviewGraphics;
+                mainStage.addChild(rectPreviewGraphics);
+
+                // 5. Interaction Events on Stage
                 app.stage.eventMode = 'static';
                 app.stage.hitArea = app.screen;
 
@@ -141,7 +150,10 @@ export default function SelectPixels() {
                         if (selectModeRef.current === 'auto') {
                             attemptAutoSelect(localPos.x, localPos.y);
                         } else {
-                            attemptDraw(localPos.x, localPos.y);
+                            // Manual mode: Start rectangle selection
+                            const gx = Math.floor(localPos.x / CELL_SIZE);
+                            const gy = Math.floor(localPos.y / CELL_SIZE);
+                            rectangleStartRef.current = { x: gx, y: gy };
                         }
                     }
                 });
@@ -154,14 +166,86 @@ export default function SelectPixels() {
                         mainStage.x = startStagePos.x + (globalPos.x - dragStart.x);
                         mainStage.y = startStagePos.y + (globalPos.y - dragStart.y);
                     } else if (toolRef.current === 'draw' && selectModeRef.current === 'manual') {
-                        // Only manual draw supports dragging, auto select is click-only
-                        const localPos = mainStage.toLocal(globalPos);
-                        attemptDraw(localPos.x, localPos.y);
+                        // Manual mode: Draw rectangle preview
+                        if (rectangleStartRef.current && rectanglePreviewRef.current) {
+                            const localPos = mainStage.toLocal(globalPos);
+                            const gx = Math.floor(localPos.x / CELL_SIZE);
+                            const gy = Math.floor(localPos.y / CELL_SIZE);
+
+                            const startX = Math.min(rectangleStartRef.current.x, gx);
+                            const startY = Math.min(rectangleStartRef.current.y, gy);
+                            const endX = Math.max(rectangleStartRef.current.x, gx);
+                            const endY = Math.max(rectangleStartRef.current.y, gy);
+
+                            // Draw preview - skip occupied pixels
+                            const preview = rectanglePreviewRef.current;
+                            preview.clear();
+
+                            // Draw each cell individually, skipping occupied ones
+                            for (let x = startX; x <= endX; x++) {
+                                for (let y = startY; y <= endY; y++) {
+                                    // Bounds check
+                                    if (x < 0 || x >= GRID_COLS || y < 0 || y >= GRID_ROWS) continue;
+
+                                    const key = `${x},${y}`;
+
+                                    // Skip if occupied
+                                    if (occupiedSet.current.has(key)) continue;
+
+                                    // Draw this cell
+                                    preview.rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                                }
+                            }
+
+                            // Fill and stroke all at once
+                            preview.fill({ color: 0x22c55e, alpha: 0.3 }); // Semi-transparent green
+                            preview.stroke({ width: 1, color: 0x22c55e });
+                        }
                     }
                 });
 
-                app.stage.on('pointerup', () => { isDragging = false; });
-                app.stage.on('pointerupoutside', () => { isDragging = false; });
+                app.stage.on('pointerup', (e) => {
+                    // If we're in manual mode and have a rectangle selection
+                    if (toolRef.current === 'draw' && selectModeRef.current === 'manual' && rectangleStartRef.current) {
+                        const globalPos = e.global;
+                        const localPos = mainStage.toLocal(globalPos);
+                        const gx = Math.floor(localPos.x / CELL_SIZE);
+                        const gy = Math.floor(localPos.y / CELL_SIZE);
+
+                        // Fill the rectangle
+                        fillRectangleSelection(rectangleStartRef.current.x, rectangleStartRef.current.y, gx, gy);
+
+                        // Clear preview
+                        if (rectanglePreviewRef.current) {
+                            rectanglePreviewRef.current.clear();
+                        }
+
+                        // Reset rectangle start
+                        rectangleStartRef.current = null;
+                    }
+
+                    isDragging = false;
+                });
+
+                app.stage.on('pointerupoutside', (e) => {
+                    // Same logic as pointerup
+                    if (toolRef.current === 'draw' && selectModeRef.current === 'manual' && rectangleStartRef.current) {
+                        const globalPos = e.global;
+                        const localPos = mainStage.toLocal(globalPos);
+                        const gx = Math.floor(localPos.x / CELL_SIZE);
+                        const gy = Math.floor(localPos.y / CELL_SIZE);
+
+                        fillRectangleSelection(rectangleStartRef.current.x, rectangleStartRef.current.y, gx, gy);
+
+                        if (rectanglePreviewRef.current) {
+                            rectanglePreviewRef.current.clear();
+                        }
+
+                        rectangleStartRef.current = null;
+                    }
+
+                    isDragging = false;
+                });
                 app.stage.on('wheel', (e) => {
                     // Zoom logic
                     e.preventDefault(); // Prevent page scroll
@@ -236,6 +320,37 @@ export default function SelectPixels() {
         g.stroke();
     };
 
+    const fillRectangleSelection = (x1: number, y1: number, x2: number, y2: number) => {
+        // Normalize coordinates to get top-left and bottom-right
+        const startX = Math.min(x1, x2);
+        const startY = Math.min(y1, y2);
+        const endX = Math.max(x1, x2);
+        const endY = Math.max(y1, y2);
+
+        const newPixels = new Set(selectedPixels);
+
+        // Fill all pixels in the rectangle
+        for (let x = startX; x <= endX; x++) {
+            for (let y = startY; y <= endY; y++) {
+                // Bounds check
+                if (x < 0 || x >= GRID_COLS || y < 0 || y >= GRID_ROWS) continue;
+
+                const key = `${x},${y}`;
+
+                // Skip if occupied or already selected
+                if (occupiedSet.current.has(key)) continue;
+                if (newPixels.has(key)) continue;
+
+                // Check max limit
+                if (newPixels.size >= MAX_CANVAS_PIXELS) break;
+
+                newPixels.add(key);
+            }
+        }
+
+        setSelectedPixels(newPixels);
+    };
+
     const attemptAutoSelect = (localX: number, localY: number) => {
         // Auto select a block based on blockSize preset
         const gx = Math.floor(localX / CELL_SIZE);
@@ -306,6 +421,50 @@ export default function SelectPixels() {
 
     const handleClear = () => {
         setSelectedPixels(new Set());
+    };
+
+    const handleZoomIn = () => {
+        if (appRef.current) {
+            const mainStage = appRef.current.stage.getChildByName('mainStage') as Container;
+            if (mainStage) {
+                const newScale = Math.min(mainStage.scale.x * 1.2, 3); // Max 300%
+                mainStage.scale.set(newScale);
+                setZoom(newScale);
+            }
+        }
+    };
+
+    const handleZoomOut = () => {
+        if (appRef.current) {
+            const mainStage = appRef.current.stage.getChildByName('mainStage') as Container;
+            if (mainStage) {
+                const newScale = Math.max(mainStage.scale.x / 1.2, 0.2); // Min 20%
+                mainStage.scale.set(newScale);
+                setZoom(newScale);
+            }
+        }
+    };
+
+    const handleFitView = () => {
+        if (appRef.current && containerRef.current) {
+            const mainStage = appRef.current.stage.getChildByName('mainStage') as Container;
+            if (mainStage) {
+                // Calculate scale to fit canvas in viewport
+                const viewWidth = containerRef.current.clientWidth;
+                const viewHeight = containerRef.current.clientHeight;
+                const scaleX = viewWidth / CANVAS_WIDTH;
+                const scaleY = viewHeight / CANVAS_HEIGHT;
+                const newScale = Math.min(scaleX, scaleY) * 0.9; // 90% to add padding
+
+                mainStage.scale.set(newScale);
+
+                // Center the canvas
+                mainStage.x = (viewWidth - CANVAS_WIDTH * newScale) / 2;
+                mainStage.y = (viewHeight - CANVAS_HEIGHT * newScale) / 2;
+
+                setZoom(newScale);
+            }
+        }
     };
 
     const handleNext = () => {
@@ -495,10 +654,31 @@ export default function SelectPixels() {
 
                 {/* --- CANVAS AREA --- */}
                 <div className="flex-1 relative bg-[#0a0a0a]">
-                    {/* Zoom Indicator (Top Right) */}
-                    <div className="absolute top-6 right-6 z-10">
-                        <div className="bg-black/60 backdrop-blur text-white text-xs font-mono px-3 py-2 rounded-lg border border-white/10 shadow-lg">
-                            Zoom: {Math.round(zoom * 100)}%
+                    {/* Zoom Controls (Bottom Right) */}
+                    <div className="absolute bottom-6 right-6 z-10 flex flex-col gap-2">
+                        <button
+                            onClick={handleZoomIn}
+                            className="bg-black/80 backdrop-blur hover:bg-black/90 text-white p-2 rounded-lg border border-white/10 shadow-lg transition-all"
+                            title="Zoom In"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">add</span>
+                        </button>
+                        <button
+                            onClick={handleZoomOut}
+                            className="bg-black/80 backdrop-blur hover:bg-black/90 text-white p-2 rounded-lg border border-white/10 shadow-lg transition-all"
+                            title="Zoom Out"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">remove</span>
+                        </button>
+                        <button
+                            onClick={handleFitView}
+                            className="bg-black/80 backdrop-blur hover:bg-black/90 text-white p-2 rounded-lg border border-white/10 shadow-lg transition-all"
+                            title="Fit to View"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">fit_screen</span>
+                        </button>
+                        <div className="bg-black/80 backdrop-blur text-white text-xs font-mono px-3 py-2 rounded-lg border border-white/10 shadow-lg text-center">
+                            {Math.round(zoom * 100)}%
                         </div>
                     </div>
 
