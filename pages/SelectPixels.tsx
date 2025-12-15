@@ -409,6 +409,50 @@ export default function SelectPixels() {
         setSelectedPixels(new Set());
     };
 
+    const handleZoomIn = () => {
+        if (appRef.current) {
+            const mainStage = appRef.current.stage.getChildByName('mainStage') as Container;
+            if (mainStage) {
+                const newScale = Math.min(mainStage.scale.x * 1.2, 3); // Max 300%
+                mainStage.scale.set(newScale);
+                setZoom(newScale);
+            }
+        }
+    };
+
+    const handleZoomOut = () => {
+        if (appRef.current) {
+            const mainStage = appRef.current.stage.getChildByName('mainStage') as Container;
+            if (mainStage) {
+                const newScale = Math.max(mainStage.scale.x / 1.2, 0.2); // Min 20%
+                mainStage.scale.set(newScale);
+                setZoom(newScale);
+            }
+        }
+    };
+
+    const handleFitView = () => {
+        if (appRef.current && containerRef.current) {
+            const mainStage = appRef.current.stage.getChildByName('mainStage') as Container;
+            if (mainStage) {
+                // Calculate scale to fit canvas in viewport
+                const viewWidth = containerRef.current.clientWidth;
+                const viewHeight = containerRef.current.clientHeight;
+                const scaleX = viewWidth / CANVAS_WIDTH;
+                const scaleY = viewHeight / CANVAS_HEIGHT;
+                const newScale = Math.min(scaleX, scaleY) * 0.9; // 90% to add padding
+
+                mainStage.scale.set(newScale);
+
+                // Center the canvas
+                mainStage.x = (viewWidth - CANVAS_WIDTH * newScale) / 2;
+                mainStage.y = (viewHeight - CANVAS_HEIGHT * newScale) / 2;
+
+                setZoom(newScale);
+            }
+        }
+    };
+
     const handleNext = () => {
         // Prepare data for Step 3
         const pixelCount = selectedPixels.size;
@@ -596,10 +640,120 @@ export default function SelectPixels() {
 
                 {/* --- CANVAS AREA --- */}
                 <div className="flex-1 relative bg-[#0a0a0a]">
-                    {/* Zoom Indicator (Top Right) */}
-                    <div className="absolute top-6 right-6 z-10">
-                        <div className="bg-black/60 backdrop-blur text-white text-xs font-mono px-3 py-2 rounded-lg border border-white/10 shadow-lg">
-                            Zoom: {Math.round(zoom * 100)}%
+                    {/* Tool Controls (Top Left) */}
+                    <div className="absolute top-6 left-6 z-10 space-y-3">
+                        {/* Selection Mode */}
+                        <div className="bg-black/80 backdrop-blur rounded-lg p-3 border border-white/10 shadow-lg">
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setSelectMode('auto')}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all ${
+                                        selectMode === 'auto'
+                                            ? 'bg-primary text-black'
+                                            : 'bg-white/10 text-white hover:bg-white/20'
+                                    }`}
+                                    title="Auto Select - Click to select preset blocks"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">grid_on</span>
+                                    <span>Auto</span>
+                                </button>
+                                <button
+                                    onClick={() => setSelectMode('manual')}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all ${
+                                        selectMode === 'manual'
+                                            ? 'bg-primary text-black'
+                                            : 'bg-white/10 text-white hover:bg-white/20'
+                                    }`}
+                                    title="Manual Draw - Draw rectangles to select"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">brush</span>
+                                    <span>Manual</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Block Size Preset (only for Auto) */}
+                        {selectMode === 'auto' && (
+                            <div className="bg-black/80 backdrop-blur rounded-lg p-3 border border-white/10 shadow-lg">
+                                <select
+                                    value={blockSize}
+                                    onChange={(e) => setBlockSize(Number(e.target.value))}
+                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-md text-white text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                                >
+                                    <option value={100}>10×10 (100px)</option>
+                                    <option value={200}>14×14 (200px)</option>
+                                    <option value={500}>22×22 (500px)</option>
+                                    <option value={1000}>32×32 (1K px)</option>
+                                    <option value={2500}>50×50 (2.5K px)</option>
+                                </select>
+                            </div>
+                        )}
+
+                        {/* Canvas Tools */}
+                        <div className="bg-black/80 backdrop-blur rounded-lg p-3 border border-white/10 shadow-lg">
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => { setCurrentTool('draw'); if(appRef.current) appRef.current.canvas.style.cursor = 'crosshair'; }}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all ${
+                                        currentTool === 'draw'
+                                            ? 'bg-primary text-black'
+                                            : 'bg-white/10 text-white hover:bg-white/20'
+                                    }`}
+                                    title="Select Tool"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">touch_app</span>
+                                    <span>Select</span>
+                                </button>
+                                <button
+                                    onClick={() => { setCurrentTool('pan'); if(appRef.current) appRef.current.canvas.style.cursor = 'grab'; }}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all ${
+                                        currentTool === 'pan'
+                                            ? 'bg-primary text-black'
+                                            : 'bg-white/10 text-white hover:bg-white/20'
+                                    }`}
+                                    title="Pan Tool"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">pan_tool</span>
+                                    <span>Pan</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Clear Button */}
+                        <button
+                            onClick={handleClear}
+                            className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-2 border border-red-500/30"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                            <span>Clear</span>
+                        </button>
+                    </div>
+
+                    {/* Zoom Controls (Bottom Right) */}
+                    <div className="absolute bottom-6 right-6 z-10 flex flex-col gap-2">
+                        <button
+                            onClick={handleZoomIn}
+                            className="bg-black/80 backdrop-blur hover:bg-black/90 text-white p-2 rounded-lg border border-white/10 shadow-lg transition-all"
+                            title="Zoom In"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">add</span>
+                        </button>
+                        <button
+                            onClick={handleZoomOut}
+                            className="bg-black/80 backdrop-blur hover:bg-black/90 text-white p-2 rounded-lg border border-white/10 shadow-lg transition-all"
+                            title="Zoom Out"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">remove</span>
+                        </button>
+                        <button
+                            onClick={handleFitView}
+                            className="bg-black/80 backdrop-blur hover:bg-black/90 text-white p-2 rounded-lg border border-white/10 shadow-lg transition-all"
+                            title="Fit to View"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">fit_screen</span>
+                        </button>
+                        <div className="bg-black/80 backdrop-blur text-white text-xs font-mono px-3 py-2 rounded-lg border border-white/10 shadow-lg text-center">
+                            {Math.round(zoom * 100)}%
                         </div>
                     </div>
 
