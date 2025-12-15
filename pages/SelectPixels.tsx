@@ -36,7 +36,10 @@ export default function SelectPixels() {
     const [currentTool, setCurrentTool] = useState<'draw' | 'pan'>('draw');
     const [totalCost, setTotalCost] = useState(0);
     const [zoom, setZoom] = useState(1);
-    
+
+    // Ref to track current tool for event handlers (avoid stale closure)
+    const toolRef = useRef(currentTool);
+
     // Calculate Occupied Set for O(1) Lookup
     const occupiedSet = useRef<Set<string>>(new Set());
     
@@ -125,7 +128,7 @@ export default function SelectPixels() {
                     dragStart = { x: globalPos.x, y: globalPos.y };
                     startStagePos = { x: mainStage.x, y: mainStage.y };
 
-                    if (currentTool === 'draw') {
+                    if (toolRef.current === 'draw') {
                         // Convert to local grid coords
                         const localPos = mainStage.toLocal(globalPos);
                         attemptDraw(localPos.x, localPos.y);
@@ -136,10 +139,10 @@ export default function SelectPixels() {
                     if (!isDragging) return;
                     const globalPos = e.global;
 
-                    if (currentTool === 'pan') {
+                    if (toolRef.current === 'pan') {
                         mainStage.x = startStagePos.x + (globalPos.x - dragStart.x);
                         mainStage.y = startStagePos.y + (globalPos.y - dragStart.y);
-                    } else if (currentTool === 'draw') {
+                    } else if (toolRef.current === 'draw') {
                         const localPos = mainStage.toLocal(globalPos);
                         attemptDraw(localPos.x, localPos.y);
                     }
@@ -174,10 +177,7 @@ export default function SelectPixels() {
         };
     }, []); // Run once on mount
 
-    // Update tool ref in closure is tricky with Pixi events, 
-    // so we use a ref or rely on the state update triggering re-bind (expensive).
-    // Better way: Mutable ref for event loop access.
-    const toolRef = useRef(currentTool);
+    // Sync toolRef with currentTool state changes
     useEffect(() => { toolRef.current = currentTool; }, [currentTool]);
 
     // Update selection graphics when state changes
